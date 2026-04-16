@@ -1,7 +1,6 @@
 {
   "name": "chat-pdf-tfidf",
   "version": "1.0.0",
-  "description": "Chat bot que extrai trechos de PDF usando TF-IDF local e variáveis de ambiente.",
   "main": "api/chat.js",
   "scripts": {
     "dev": "vercel dev",
@@ -13,9 +12,6 @@
     "pdf-parse": "^1.1.1"
   },
   "engines": {
-    "node": "18.x"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC"
+    "node": "20.x"
+  }
 }
