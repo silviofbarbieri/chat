@@ -1,63 +1,73 @@
 <!DOCTYPE html>
-<html lang="pt-br">
+<html lang="pt-pt">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PDF Chat TF-IDF</title>
+    <title>Chat PDF TF-IDF</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .chat-container { height: calc(100vh - 180px); }
+    </style>
 </head>
-<body class="bg-gray-100 h-screen flex flex-col">
+<body class="bg-slate-50 font-sans">
 
-    <header class="bg-blue-600 text-white p-4 shadow-md">
-        <h1 class="text-xl font-bold text-center">Chat PDF (TF-IDF)</h1>
-    </header>
+    <div class="max-w-4xl mx-auto flex flex-col h-screen p-4">
+        <header class="py-4 border-b flex justify-between items-center">
+            <h1 class="text-2xl font-bold text-slate-800">PDF Chat <span class="text-blue-600 text-sm font-normal">TF-IDF Engine</span></h1>
+            <input type="file" id="pdf-input" accept="application/pdf" class="text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer">
+        </header>
 
-    <main class="flex-1 overflow-y-auto p-4 space-y-4" id="chat-box">
-        </main>
-
-    <footer class="p-4 bg-white border-t">
-        <div class="max-w-4xl mx-auto flex flex-col gap-2">
-            <input type="file" id="pdf-input" accept="application/pdf" class="text-sm text-gray-500">
-            <div class="flex gap-2">
-                <input type="text" id="user-input" placeholder="Pergunte algo sobre o PDF..." class="flex-1 border rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                <button onclick="sendMessage()" class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700">Enviar</button>
+        <div id="chat-box" class="chat-container overflow-y-auto my-4 space-y-4 p-4 border rounded-xl bg-white shadow-sm">
+            <div class="bg-blue-50 text-blue-800 p-3 rounded-lg text-sm">
+                Olá! Carregue um PDF acima e faça uma pergunta para eu encontrar o trecho mais relevante.
             </div>
         </div>
-    </footer>
+
+        <div class="flex gap-2 bg-white p-2 border rounded-full shadow-lg">
+            <input type="text" id="user-input" placeholder="Escreva a sua pergunta..." class="flex-1 px-6 py-2 outline-none text-slate-700">
+            <button onclick="sendMessage()" id="send-btn" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-full transition-all">
+                Enviar
+            </button>
+        </div>
+    </div>
 
     <script>
         async function sendMessage() {
             const input = document.getElementById('user-input');
             const fileInput = document.getElementById('pdf-input');
             const chatBox = document.getElementById('chat-box');
+            const btn = document.getElementById('send-btn');
 
-            if (!input.value || fileInput.files.length === 0) {
-                alert("Por favor, selecione um PDF e digite uma mensagem.");
-                return;
-            }
+            if (!fileInput.files[0]) return alert("Por favor, selecione um PDF primeiro.");
+            if (!input.value.trim()) return;
 
-            // UI: Adicionar mensagem do usuário
-            chatBox.innerHTML += `<div class="text-right"><span class="bg-blue-100 p-2 rounded-lg">${input.value}</span></div>`;
+            const question = input.value;
+            input.value = '';
+
+            // Adicionar pergunta do utilizador à UI
+            chatBox.innerHTML += `<div class="flex justify-end"><div class="bg-blue-600 text-white p-3 rounded-2xl rounded-tr-none max-w-[80%] shadow-sm">${question}</div></div>`;
+            chatBox.scrollTop = chatBox.scrollHeight;
+
+            // Bloquear botão durante o processamento
+            btn.disabled = true;
+            btn.innerText = "...";
 
             const formData = new FormData();
             formData.append('pdf', fileInput.files[0]);
-            formData.append('question', input.value);
+            formData.append('question', question);
 
             try {
-                const response = await fetch('/api/chat', {
-                    method: 'POST',
-                    body: formData
-                });
+                const response = await fetch('/api/chat', { method: 'POST', body: formData });
                 const data = await response.json();
-                
-                chatBox.innerHTML += `<div class="text-left"><span class="bg-gray-200 p-2 rounded-lg">${data.answer}</span></div>`;
-            } catch (err) {
-                chatBox.innerHTML += `<div class="text-red-500">Erro ao processar requisição.</div>`;
-            }
 
-            input.value = '';
-            chatBox.scrollTop = chatBox.scrollHeight;
-        }
-    </script>
-</body>
-</html>
+                // Adicionar resposta (trecho do PDF) à UI
+                chatBox.innerHTML += `
+                    <div class="flex justify-start">
+                        <div class="bg-slate-100 text-slate-800 p-3 rounded-2xl rounded-tl-none max-w-[80%] border border-slate-200">
+                            <p class="text-xs font-bold text-blue-600 mb-1 uppercase tracking-widest">Trecho Encontrado:</p>
+                            ${data.answer}
+                            ${data.relevance ? `<br><span class="text-[10px] text-slate-400">Relevância TF-IDF: ${data.relevance}</span>` : ''}
+                        </div>
+                    </div>`;
+            } catch (err) {
+                chatBox.innerHTML += `<div class="
