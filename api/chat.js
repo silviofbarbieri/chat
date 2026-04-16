@@ -1,49 +1,51 @@
-import { TfIdf } from 'natural';
-import pdf from 'pdf-parse';
+import natural from 'natural';
+const { TfIdf } = natural;
+import pdf from 'pdf-parse/lib/pdf-parse.js';
 import { IncomingForm } from 'formidable';
 import fs from 'fs';
 
 export const config = {
-  api: { bodyParser: false },
+  api: {
+    bodyParser: false, // Obrigatório para upload de ficheiros
+  },
 };
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Use POST' });
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Método não permitido' });
 
-  const form = new IncomingForm({ keepExtensions: true });
+  const form = new IncomingForm();
 
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     form.parse(req, async (err, fields, files) => {
       if (err) {
-        res.status(500).json({ error: 'Erro no upload' });
+        res.status(500).json({ error: 'Erro ao processar o formulário' });
         return resolve();
       }
 
       try {
-        // Na versão 3 do formidable, files.pdf é um array
+        // Ajuste para Formidable v2/v3
         const pdfFile = Array.isArray(files.pdf) ? files.pdf[0] : files.pdf;
         const question = Array.isArray(fields.question) ? fields.question[0] : fields.question;
 
         if (!pdfFile || !pdfFile.filepath) {
-          res.status(400).json({ answer: "Ficheiro PDF não encontrado no envio." });
+          res.status(400).json({ answer: "Erro: O ficheiro PDF não foi recebido corretamente." });
           return resolve();
         }
 
-        // Leitura do buffer
+        // Ler o ficheiro do caminho temporário
         const dataBuffer = fs.readFileSync(pdfFile.filepath);
-        const pdfData = await pdf(dataBuffer);
         
-        // Se o PDF for imagem/scaneado, o texto virá vazio
-        if (!pdfData.text || pdfData.text.trim().length === 0) {
-          res.status(200).json({ answer: "O PDF parece estar vazio ou é uma imagem sem texto (OCR necessário)." });
+        // Extração de texto
+        const pdfData = await pdf(dataBuffer);
+        const text = pdfData.text;
+
+        if (!text || text.trim().length < 5) {
+          res.status(200).json({ answer: "Não consegui ler texto deste PDF. Ele pode ser uma imagem ou estar protegido." });
           return resolve();
         }
 
-        const sentences = pdfData.text
-          .split(/\n|(?<=[.!?])\s+/)
-          .map(s => s.trim())
-          .filter(s => s.length > 10);
-
+        // Criar o motor de busca (TF-IDF)
+        const sentences = text.split(/[.\n!]+/).filter(s => s.trim().length > 10);
         const tfidf = new TfIdf();
         sentences.forEach(s => tfidf.addDocument(s));
 
@@ -58,14 +60,14 @@ export default async function handler(req, res) {
         });
 
         res.status(200).json({
-          answer: bestMatch || "Encontrei o texto, mas não há trechos relevantes para essa pergunta.",
+          answer: bestMatch.trim() || "Não encontrei um trecho específico sobre isso.",
           relevance: highestScore.toFixed(2)
         });
         resolve();
 
       } catch (error) {
-        console.error("Erro interno:", error);
-        res.status(500).json({ error: 'Falha ao processar o conteúdo do PDF' });
+        console.error("Erro no processamento:", error);
+        res.status(500).json({ error: "Erro interno ao ler o PDF." });
         resolve();
       }
     });
