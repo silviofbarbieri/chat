@@ -1,26 +1,29 @@
-// Exemplo lógico do arquivo api/chat.js
-import { TfIdf } from 'natural'; // Exemplo de lib de processamento
+import { TfIdf } from 'natural';
 import pdf from 'pdf-parse';
 
 export default async function handler(req, res) {
-    if (req.method !== 'POST') return res.status(405).send('Method Not Allowed');
+    // 1. Pega o PDF e a Pergunta do corpo da requisição
+    // 2. Extrai o texto: 
+    const data = await pdf(bufferDoArquivo);
+    const textoCompleto = data.text;
 
-    // 1. Acessando a chave protegida (Configurada no Dashboard da Vercel)
-    const API_KEY = process.env.MY_FREE_API_KEY;
+    // 3. Divide o texto em sentenças (ou parágrafos)
+    const sentencas = textoCompleto.split(/[.!?\n]/);
 
-    try {
-        // Lógica simplificada:
-        // - Extrair texto do PDF enviado via req.body (ou via multipart form data)
-        // - Aplicar o algoritmo TF-IDF para encontrar a parte mais relevante
-        // - Retornar a resposta
-        
-        const respostaMock = "O TF-IDF identificou que este documento trata de...";
+    // 4. Aplica o TF-IDF
+    const tfidf = new TfIdf();
+    sentencas.forEach((s, index) => tfidf.addDocument(s, index));
 
-        res.status(200).json({ 
-            answer: respostaMock,
-            status: "Processado com a chave: " + API_KEY.substring(0, 4) + "****" 
-        });
-    } catch (error) {
-        res.status(500).json({ error: "Falha na decodificação" });
-    }
+    let melhorTrecho = "";
+    let maiorScore = 0;
+
+    // 5. Compara a pergunta com as sentenças
+    tfidf.tfidfs(req.body.question, (i, score) => {
+        if (score > maiorScore) {
+            maiorScore = score;
+            melhorTrecho = sentencas[i];
+        }
+    });
+
+    res.status(200).json({ answer: melhorTrecho || "Trecho não encontrado." });
 }
