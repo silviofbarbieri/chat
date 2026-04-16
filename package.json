@@ -1,6 +1,7 @@
 {
   "name": "chat-pdf-tfidf",
   "version": "1.0.0",
+  "type": "module",
   "main": "api/chat.js",
   "scripts": {
     "dev": "vercel dev",
