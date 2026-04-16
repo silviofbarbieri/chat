@@ -3,68 +3,71 @@ import pdf from 'pdf-parse';
 import { IncomingForm } from 'formidable';
 import fs from 'fs';
 
-// Configuração obrigatória para Vercel não corromper o upload de ficheiros
 export const config = {
-  api: {
-    bodyParser: false,
-  },
+  api: { bodyParser: false },
 };
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Apenas POST permitido' });
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Use POST' });
 
-  const form = new IncomingForm();
+  const form = new IncomingForm({ keepExtensions: true });
 
-  form.parse(req, async (err, fields, files) => {
-    if (err) return res.status(500).json({ error: 'Erro no upload' });
-
-    try {
-      // 1. Acesso à chave de ambiente (opcional se usar TF-IDF puro)
-      const apiKey = process.env.API_KEY_CHAT;
-
-      // 2. Extrair ficheiro e pergunta
-      const pdfFile = Array.isArray(files.pdf) ? files.pdf[0] : files.pdf;
-      const question = Array.isArray(fields.question) ? fields.question[0] : fields.question;
-
-      if (!pdfFile) return res.status(400).json({ answer: "Nenhum ficheiro enviado." });
-
-      // 3. Ler o PDF
-      const dataBuffer = fs.readFileSync(pdfFile.filepath);
-      const pdfData = await pdf(dataBuffer);
-      
-      // 4. Fragmentar o texto em frases para análise
-      const sentences = pdfData.text
-        .split(/\n|(?<=[.!?])\s+/)
-        .map(s => s.trim())
-        .filter(s => s.length > 15);
-
-      if (sentences.length === 0) {
-        return res.status(200).json({ answer: "O PDF parece estar vazio ou é uma imagem (OCR necessário)." });
+  return new Promise((resolve, reject) => {
+    form.parse(req, async (err, fields, files) => {
+      if (err) {
+        res.status(500).json({ error: 'Erro no upload' });
+        return resolve();
       }
 
-      // 5. Motor TF-IDF
-      const tfidf = new TfIdf();
-      sentences.forEach(s => tfidf.addDocument(s));
+      try {
+        // Na versão 3 do formidable, files.pdf é um array
+        const pdfFile = Array.isArray(files.pdf) ? files.pdf[0] : files.pdf;
+        const question = Array.isArray(fields.question) ? fields.question[0] : fields.question;
 
-      let highestScore = 0;
-      let bestMatch = "";
-
-      // Procurar a frase com maior pontuação matemática em relação à pergunta
-      tfidf.tfidfs(question, (i, score) => {
-        if (score > highestScore) {
-          highestScore = score;
-          bestMatch = sentences[i];
+        if (!pdfFile || !pdfFile.filepath) {
+          res.status(400).json({ answer: "Ficheiro PDF não encontrado no envio." });
+          return resolve();
         }
-      });
 
-      // 6. Resposta Final
-      res.status(200).json({
-        answer: bestMatch || "Não encontrei um trecho relevante para essa pergunta.",
-        relevance: highestScore.toFixed(2)
-      });
+        // Leitura do buffer
+        const dataBuffer = fs.readFileSync(pdfFile.filepath);
+        const pdfData = await pdf(dataBuffer);
+        
+        // Se o PDF for imagem/scaneado, o texto virá vazio
+        if (!pdfData.text || pdfData.text.trim().length === 0) {
+          res.status(200).json({ answer: "O PDF parece estar vazio ou é uma imagem sem texto (OCR necessário)." });
+          return resolve();
+        }
 
-    } catch (error) {
-      res.status(500).json({ error: 'Erro ao processar PDF' });
-    }
+        const sentences = pdfData.text
+          .split(/\n|(?<=[.!?])\s+/)
+          .map(s => s.trim())
+          .filter(s => s.length > 10);
+
+        const tfidf = new TfIdf();
+        sentences.forEach(s => tfidf.addDocument(s));
+
+        let highestScore = 0;
+        let bestMatch = "";
+
+        tfidf.tfidfs(question, (i, score) => {
+          if (score > highestScore) {
+            highestScore = score;
+            bestMatch = sentences[i];
+          }
+        });
+
+        res.status(200).json({
+          answer: bestMatch || "Encontrei o texto, mas não há trechos relevantes para essa pergunta.",
+          relevance: highestScore.toFixed(2)
+        });
+        resolve();
+
+      } catch (error) {
+        console.error("Erro interno:", error);
+        res.status(500).json({ error: 'Falha ao processar o conteúdo do PDF' });
+        resolve();
+      }
+    });
   });
 }
