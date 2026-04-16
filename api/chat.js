@@ -3,7 +3,7 @@ import pdf from 'pdf-parse';
 import { IncomingForm } from 'formidable';
 import fs from 'fs';
 
-// Configuração necessária para a Vercel não tentar processar o body automaticamente
+// Configuração obrigatória para Vercel não corromper o upload de ficheiros
 export const config = {
   api: {
     bodyParser: false,
@@ -11,51 +11,45 @@ export const config = {
 };
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Método não permitido' });
-  }
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Apenas POST permitido' });
 
   const form = new IncomingForm();
 
   form.parse(req, async (err, fields, files) => {
-    if (err) {
-      return res.status(500).json({ error: 'Erro ao processar formulário' });
-    }
+    if (err) return res.status(500).json({ error: 'Erro no upload' });
 
     try {
-      // 1. Acessar a chave (apenas para validar que o ambiente está ok)
+      // 1. Acesso à chave de ambiente (opcional se usar TF-IDF puro)
       const apiKey = process.env.API_KEY_CHAT;
 
-      // 2. Ler o arquivo PDF enviado
-      const pdfFile = files.pdf[0] || files.pdf;
-      const dataBuffer = fs.readFileSync(pdfFile.filepath);
-      
-      // 3. Extrair texto do PDF
-      const pdfData = await pdf(dataBuffer);
-      const fullText = pdfData.text;
+      // 2. Extrair ficheiro e pergunta
+      const pdfFile = Array.isArray(files.pdf) ? files.pdf[0] : files.pdf;
+      const question = Array.isArray(fields.question) ? fields.question[0] : fields.question;
 
-      // 4. Limpar e dividir o texto em frases/sentenças
-      // Dividimos por quebras de linha ou pontos seguidos de espaço
-      const sentences = fullText
+      if (!pdfFile) return res.status(400).json({ answer: "Nenhum ficheiro enviado." });
+
+      // 3. Ler o PDF
+      const dataBuffer = fs.readFileSync(pdfFile.filepath);
+      const pdfData = await pdf(dataBuffer);
+      
+      // 4. Fragmentar o texto em frases para análise
+      const sentences = pdfData.text
         .split(/\n|(?<=[.!?])\s+/)
         .map(s => s.trim())
-        .filter(s => s.length > 20); // Filtra ruídos curtos
+        .filter(s => s.length > 15);
 
       if (sentences.length === 0) {
-        return res.status(400).json({ answer: "Não foi possível extrair texto legível do PDF." });
+        return res.status(200).json({ answer: "O PDF parece estar vazio ou é uma imagem (OCR necessário)." });
       }
 
-      // 5. Aplicar TF-IDF
+      // 5. Motor TF-IDF
       const tfidf = new TfIdf();
-      sentences.forEach((sentence) => {
-        tfidf.addDocument(sentence);
-      });
+      sentences.forEach(s => tfidf.addDocument(s));
 
-      const question = fields.question[0] || fields.question;
       let highestScore = 0;
       let bestMatch = "";
 
-      // 6. Comparar a pergunta com cada frase (documento)
+      // Procurar a frase com maior pontuação matemática em relação à pergunta
       tfidf.tfidfs(question, (i, score) => {
         if (score > highestScore) {
           highestScore = score;
@@ -63,15 +57,14 @@ export default async function handler(req, res) {
         }
       });
 
-      // 7. Retornar o trecho exato
-      res.status(200).json({ 
-        answer: bestMatch || "Desculpe, não encontrei um trecho relevante no documento.",
+      // 6. Resposta Final
+      res.status(200).json({
+        answer: bestMatch || "Não encontrei um trecho relevante para essa pergunta.",
         relevance: highestScore.toFixed(2)
       });
 
     } catch (error) {
-      console.error(error);
-      res.status(500).json({ error: 'Erro ao processar o PDF' });
+      res.status(500).json({ error: 'Erro ao processar PDF' });
     }
   });
 }
